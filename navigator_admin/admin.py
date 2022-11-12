@@ -2,10 +2,11 @@ from pathlib import Path
 from typing import Union
 import orjson
 from aiohttp import web, hdrs, web_exceptions
+from navigator_session import get_session
 from navigator.extensions import BaseExtension
 from navigator.responses import Response
 from navigator_auth.decorators import allowed_groups
-
+from navigator_auth.exceptions import UserNotFound
 
 class AdminHandler(BaseExtension):
     name: str = 'auth'
@@ -73,12 +74,15 @@ class AdminHandler(BaseExtension):
             try:
                 backend = auth.backends[auth_method]
                 if userdata := await backend.authenticate(request):
+                    print('SI AUTH')
                     location = request.app.router['admin_index'].url_for()
                     token = userdata['token']
                     headers = {
                         "Authorization": f"Bearer {token}"
                     }
-                    raise web.HTTPFound(location=location, headers=headers)
+                    response = web.HTTPFound(location=location, headers=headers)
+                    await auth.session.storage.load_session(request, userdata, response=response)
+                    raise response
                 else:
                     raise web.HTTPUnauthorized(
                         reason="Unauthorized: Access Denied to this resource.",
@@ -87,6 +91,10 @@ class AdminHandler(BaseExtension):
                             hdrs.CONNECTION: 'keep-alive',
                         }
                     )
+            except UserNotFound as err:
+                raise web.HTTPForbidden(
+                    reason=f"{err.message}"
+                )
             except KeyError as ex:
                 raise web.HTTPBadRequest(
                     reason="API Key Backend Auth is not enabled.",
@@ -99,6 +107,12 @@ class AdminHandler(BaseExtension):
             raise web_exceptions.HTTPMethodNotAllowed()
 
     async def admin_index(self, request: web.Request) -> web.StreamResponse:
+        location = request.app.router['admin_login'].url_for()
+        # if request.get('authenticated', False) is False:
+        #     raise web.HTTPFound(location=location)
+        session = await get_session(request)
+        if not session: # also there is no session:
+            raise web.HTTPFound(location=location)
         view = request.app['template'].view
         args = {
             "page_url": "localhost",
