@@ -1,6 +1,5 @@
 from pathlib import Path
 from typing import Union
-import orjson
 from aiohttp import web, hdrs, web_exceptions
 from navigator_session import get_session
 from navigator.extensions import BaseExtension
@@ -51,12 +50,28 @@ class AdminHandler(BaseExtension):
             self.admin_login,
             name="admin_login"
         )
-        # router.add_route(
-        #     "GET",
-        #     f"/{self.uri_prefix}/logout",
-        #     self.admin_logout,
-        #     name="admin_logout"
-        # )
+        router.add_route(
+            "GET",
+            f"/{self.uri_prefix}/logout",
+            self.admin_logout,
+            name="admin_logout"
+        )
+
+    async def admin_logout(self, request: web.Request) -> web.StreamResponse:
+        auth = request.app["auth"]
+        location = request.app.router['admin_login'].url_for()
+        try:
+            response = web.HTTPFound(location=location)
+            await auth.session.storage.forgot(request, response)
+            raise response
+        except KeyError as ex:
+            raise web.HTTPBadRequest(
+                reason=f"Error on Logout: {ex}",
+                headers={
+                    hdrs.CONTENT_TYPE: 'text/html',
+                    hdrs.CONNECTION: 'keep-alive',
+                }
+            ) from ex
 
     async def admin_login(self, request: web.Request) -> web.StreamResponse:
         if request.method == "GET":
@@ -74,7 +89,6 @@ class AdminHandler(BaseExtension):
             try:
                 backend = auth.backends[auth_method]
                 if userdata := await backend.authenticate(request):
-                    print('SI AUTH')
                     location = request.app.router['admin_index'].url_for()
                     token = userdata['token']
                     headers = {
@@ -108,8 +122,8 @@ class AdminHandler(BaseExtension):
 
     async def admin_index(self, request: web.Request) -> web.StreamResponse:
         location = request.app.router['admin_login'].url_for()
-        # if request.get('authenticated', False) is False:
-        #     raise web.HTTPFound(location=location)
+        if request.get('authenticated', False) is False:
+            raise web.HTTPFound(location=location)
         session = await get_session(request)
         if not session: # also there is no session:
             raise web.HTTPFound(location=location)
