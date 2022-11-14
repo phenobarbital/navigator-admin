@@ -95,7 +95,8 @@ setup(
         "asyncdb>=2.1.18",
         "navigator-session>=0.1.1",
         "navigator-auth>=0.3.3",
-        "pendulum==2.1.2"
+        "pendulum==2.1.2",
+        "inflector==3.0.1"
     ],
     tests_require=[
         'pytest>=6.0.0',

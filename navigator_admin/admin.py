@@ -1,15 +1,19 @@
+from collections.abc import Callable
 from pathlib import Path
 from typing import Union
-from aiohttp import web, hdrs, web_exceptions
-from navigator_session import get_session
+
+from aiohttp import hdrs, web, web_exceptions
 from navigator.extensions import BaseExtension
 from navigator.responses import Response
 from navigator_auth.decorators import allowed_groups
 from navigator_auth.exceptions import UserNotFound
+from navigator_session import get_session
 
-class AdminHandler(BaseExtension):
+
+class AdminPanel(BaseExtension):
     name: str = 'auth'
     app: web.Application = None
+    routes: list = []
 
     def __init__(
             self,
@@ -23,16 +27,35 @@ class AdminHandler(BaseExtension):
         self.title = title
         if isinstance(template_path, str):
             self.template_path = Path(template_path).resolve()
-        super(AdminHandler, self).__init__(
+        super(AdminPanel, self).__init__(
             app_name=app_name,
             **kwargs
         )
+
+    def add_model(self, cls: Callable, route_name: str):
+        router = self.app.router
+        rt = fr"{self.uri_prefix}/{route_name}{{meta:\:?(.*)}}"
+        router.add_view(
+            rt,
+            cls,
+            name=f"admin_{cls.name}"
+        )
+        r = {
+            "name": route_name.lower(),
+            "title": route_name,
+            "icon": cls.icon,
+            "path": f"{self.uri_prefix}/{route_name}"
+        }
+        cls.uri_prefix = self.uri_prefix
+        self.routes.append(r)
+
+
 
     def setup(self, app: web.Application):
         """setup.
         Configure Admin Panel routes for Navigator.
         """
-        super(AdminHandler, self).setup(app)
+        super(AdminPanel, self).setup(app)
 
         ### adding routes:
         router = self.app.router
@@ -50,12 +73,14 @@ class AdminHandler(BaseExtension):
             self.admin_login,
             name="admin_login"
         )
+        # Logout:
         router.add_route(
-            "GET",
-            f"/{self.uri_prefix}/logout",
+            "get",
+            f"{self.uri_prefix}/logout",
             self.admin_logout,
             name="admin_logout"
         )
+        ### added declared admin handlers
 
     async def admin_logout(self, request: web.Request) -> web.StreamResponse:
         auth = request.app["auth"]
@@ -132,6 +157,7 @@ class AdminHandler(BaseExtension):
             "page_url": "localhost",
             "title": self.title,
             "main_url": self.uri_prefix,
-            "logout_url": f"{self.uri_prefix}/logout"
+            "logout_url": f"{self.uri_prefix}/logout",
+            "admin_routes": self.routes
         }
         return await view('index.html', args)
